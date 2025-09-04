@@ -196,3 +196,100 @@
     (<= threshold TOKENS_PER_ASSET)
   )
 )
+
+(define-private (is-valid-metadata-uri (uri (string-ascii 256)))
+  (and
+    (> (len uri) u0)
+    (<= (len uri) u256)
+  )
+)
+
+;;                           CORE PUBLIC FUNCTIONS                             
+
+;;                           ASSET TOKENIZATION                              
+
+(define-public (tokenize-asset
+    (metadata-uri (string-ascii 256))
+    (initial-valuation uint)
+  )
+  (begin
+    ;; Authority verification
+    (asserts! (is-eq tx-sender CONTRACT_OWNER) ERR_OWNER_ONLY)
+
+    ;; Input validation
+    (asserts! (is-valid-metadata-uri metadata-uri) ERR_INVALID_METADATA_URI)
+    (asserts! (is-valid-asset-value initial-valuation) ERR_INVALID_ASSET_VALUE)
+
+    (let ((new-asset-id (generate-next-asset-id)))
+      ;; Register asset in the blockchain registry
+      (map-set asset-registry { asset-id: new-asset-id } {
+        asset-owner: CONTRACT_OWNER,
+        metadata-uri: metadata-uri,
+        valuation: initial-valuation,
+        locked-status: false,
+        registration-height: stacks-block-height,
+        price-last-updated: stacks-block-height,
+        cumulative-dividends: u0,
+      })
+
+      ;; Initialize full ownership to contract deployer
+      (map-set fractional-ownership {
+        holder: CONTRACT_OWNER,
+        asset-id: new-asset-id,
+      } { token-balance: TOKENS_PER_ASSET }
+      )
+
+      ;; Update global state
+      (var-set current-asset-id new-asset-id)
+      (ok new-asset-id)
+    )
+  )
+)
+
+;;                          DIVIDEND DISTRIBUTION                            
+
+(define-public (distribute-dividends (asset-id uint))
+  (let (
+      (asset-data (unwrap! (get-asset-by-id asset-id) ERR_ASSET_NOT_FOUND))
+      (holder-balance (get-token-balance tx-sender asset-id))
+      (last-claim (get-last-dividend-claim asset-id tx-sender))
+      (total-distributed (get cumulative-dividends asset-data))
+      (claimable-yield (calculate-proportional-dividend holder-balance total-distributed
+        last-claim
+      ))
+    )
+    (asserts! (> claimable-yield u0) ERR_INVALID_AMOUNT)
+
+    ;; Record the dividend claim
+    (map-set dividend-ledger {
+      asset-id: asset-id,
+      beneficiary: tx-sender,
+    } { last-distribution-claimed: total-distributed }
+    )
+    (ok claimable-yield)
+  )
+)
+
+;;                           GOVERNANCE SYSTEM                               
+
+(define-public (submit-governance-proposal
+    (asset-id uint)
+    (proposal-title (string-ascii 256))
+    (voting-duration uint)
+    (quorum-requirement uint)
+  )
+  (begin
+    ;; Validation checks
+    (asserts! (is-valid-proposal-duration voting-duration)
+      ERR_INVALID_PROPOSAL_DURATION
+    )
+    (asserts! (is-valid-quorum-threshold quorum-requirement)
+      ERR_INVALID_VOTE_THRESHOLD
+    )
+    (asserts! (is-valid-metadata-uri proposal-title) ERR_INVALID_PROPOSAL_TITLE)
+
+    ;; Minimum stake requirement (10% of total supply)
+    (asserts!
+      (>= (get-token-balance tx-sender asset-id) (/ TOKENS_PER_ASSET u10))
+      ERR_NOT_AUTHORIZED
+    )
