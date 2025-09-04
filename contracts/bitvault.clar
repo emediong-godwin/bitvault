@@ -397,3 +397,44 @@
     voter-address: voter,
   })
 )
+
+;;                           MARKET DATA FEEDS                               
+
+(define-read-only (get-asset-price-feed (asset-id uint))
+  (map-get? oracle-price-feeds { asset-id: asset-id })
+)
+
+(define-read-only (get-last-dividend-claim
+    (asset-id uint)
+    (beneficiary principal)
+  )
+  (default-to u0
+    (get last-distribution-claimed
+      (map-get? dividend-ledger {
+        asset-id: asset-id,
+        beneficiary: beneficiary,
+      })
+    ))
+)
+
+;;                            UTILITY FUNCTIONS                                
+
+;;                           ID GENERATION                                   
+
+(define-private (generate-next-asset-id)
+  (+ (var-get current-asset-id) u1)
+)
+
+(define-private (generate-next-proposal-id)
+  (+ (var-get current-proposal-id) u1)
+)
+
+;;                         FINANCIAL CALCULATIONS                            
+
+(define-private (calculate-proportional-dividend
+    (holder-balance uint)
+    (total-dividends uint)
+    (last-claimed uint)
+  )
+  (/ (* holder-balance (- total-dividends last-claimed)) TOKENS_PER_ASSET)
+)
