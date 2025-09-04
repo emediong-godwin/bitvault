@@ -95,3 +95,104 @@
     cumulative-dividends: uint,
   }
 )
+
+;;                        OWNERSHIP TRACKING STORAGE                         
+
+(define-map fractional-ownership
+  {
+    holder: principal,
+    asset-id: uint,
+  }
+  { token-balance: uint }
+)
+
+;;                        COMPLIANCE VERIFICATION                            
+
+(define-map kyc-registry
+  { verified-address: principal }
+  {
+    verification-status: bool,
+    compliance-level: uint,
+    expiration-height: uint,
+  }
+)
+
+;;                         GOVERNANCE INFRASTRUCTURE                         
+
+(define-map governance-proposals
+  { proposal-id: uint }
+  {
+    proposal-title: (string-ascii 256),
+    target-asset-id: uint,
+    voting-start-height: uint,
+    voting-end-height: uint,
+    execution-status: bool,
+    support-votes: uint,
+    opposition-votes: uint,
+    required-quorum: uint,
+  }
+)
+
+(define-map voting-records
+  {
+    proposal-id: uint,
+    voter-address: principal,
+  }
+  { voting-power: uint }
+)
+
+;;                          DIVIDEND DISTRIBUTION                            
+
+(define-map dividend-ledger
+  {
+    asset-id: uint,
+    beneficiary: principal,
+  }
+  { last-distribution-claimed: uint }
+)
+
+;;                            PRICE ORACLE FEEDS                             
+
+(define-map oracle-price-feeds
+  { asset-id: uint }
+  {
+    current-price: uint,
+    price-decimals: uint,
+    timestamp-updated: uint,
+    oracle-provider: principal,
+  }
+)
+
+;;                           VALIDATION UTILITIES                              
+
+(define-private (is-valid-asset-value (value uint))
+  (and
+    (>= value MIN_ASSET_VALUE)
+    (<= value MAX_ASSET_VALUE)
+  )
+)
+
+(define-private (is-valid-proposal-duration (duration uint))
+  (and
+    (>= duration MIN_PROPOSAL_DURATION)
+    (<= duration MAX_PROPOSAL_DURATION)
+  )
+)
+
+(define-private (is-valid-kyc-level (level uint))
+  (<= level MAX_KYC_VERIFICATION_LEVEL)
+)
+
+(define-private (is-valid-expiry-time (expiry uint))
+  (and
+    (> expiry stacks-block-height)
+    (<= (- expiry stacks-block-height) MAX_KYC_VALIDITY_PERIOD)
+  )
+)
+
+(define-private (is-valid-quorum-threshold (threshold uint))
+  (and
+    (> threshold u0)
+    (<= threshold TOKENS_PER_ASSET)
+  )
+)
