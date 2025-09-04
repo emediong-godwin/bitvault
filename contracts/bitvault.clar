@@ -293,3 +293,107 @@
       (>= (get-token-balance tx-sender asset-id) (/ TOKENS_PER_ASSET u10))
       ERR_NOT_AUTHORIZED
     )
+
+    (let ((new-proposal-id (generate-next-proposal-id)))
+      ;; Create governance proposal
+      (map-set governance-proposals { proposal-id: new-proposal-id } {
+        proposal-title: proposal-title,
+        target-asset-id: asset-id,
+        voting-start-height: stacks-block-height,
+        voting-end-height: (+ stacks-block-height voting-duration),
+        execution-status: false,
+        support-votes: u0,
+        opposition-votes: u0,
+        required-quorum: quorum-requirement,
+      })
+
+      ;; Update proposal counter
+      (var-set current-proposal-id new-proposal-id)
+      (ok new-proposal-id)
+    )
+  )
+)
+
+;;                            VOTING MECHANISM                               
+
+(define-public (cast-governance-vote
+    (proposal-id uint)
+    (support-proposal bool)
+    (voting-tokens uint)
+  )
+  (let (
+      (proposal-data (unwrap! (get-proposal-by-id proposal-id) ERR_ASSET_NOT_FOUND))
+      (target-asset (get target-asset-id proposal-data))
+      (voter-balance (get-token-balance tx-sender target-asset))
+    )
+    (begin
+      ;; Verify voting eligibility
+      (asserts! (>= voter-balance voting-tokens) ERR_INVALID_AMOUNT)
+      (asserts! (< stacks-block-height (get voting-end-height proposal-data))
+        ERR_VOTING_PERIOD_ENDED
+      )
+      (asserts! (is-none (get-existing-vote proposal-id tx-sender))
+        ERR_VOTE_ALREADY_CAST
+      )
+
+      ;; Record the vote
+      (map-set voting-records {
+        proposal-id: proposal-id,
+        voter-address: tx-sender,
+      } { voting-power: voting-tokens }
+      )
+
+      ;; Update proposal vote tallies
+      (map-set governance-proposals { proposal-id: proposal-id }
+        (merge proposal-data {
+          support-votes: (if support-proposal
+            (+ (get support-votes proposal-data) voting-tokens)
+            (get support-votes proposal-data)
+          ),
+          opposition-votes: (if support-proposal
+            (get opposition-votes proposal-data)
+            (+ (get opposition-votes proposal-data) voting-tokens)
+          ),
+        })
+      )
+      (ok voting-tokens)
+    )
+  )
+)
+
+;;                            READ-ONLY FUNCTIONS                              
+
+;;                           ASSET INFORMATION                               
+
+(define-read-only (get-asset-by-id (asset-id uint))
+  (map-get? asset-registry { asset-id: asset-id })
+)
+
+(define-read-only (get-token-balance
+    (holder principal)
+    (asset-id uint)
+  )
+  (default-to u0
+    (get token-balance
+      (map-get? fractional-ownership {
+        holder: holder,
+        asset-id: asset-id,
+      })
+    ))
+)
+
+;;                          GOVERNANCE QUERIES                               
+
+(define-read-only (get-proposal-by-id (proposal-id uint))
+  (map-get? governance-proposals { proposal-id: proposal-id })
+)
+
+(define-read-only (get-existing-vote
+    (proposal-id uint)
+    (voter principal)
+  )
+  (map-get? voting-records {
+    proposal-id: proposal-id,
+    voter-address: voter,
+  })
+)
